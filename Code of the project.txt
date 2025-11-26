@@ -1,0 +1,93 @@
+#include <SPI.h>
+#include <MFRC522.h>
+#include <WiFi.h>
+#include "time.h"
+
+#define SS_PIN 5
+#define RST_PIN 22
+#define BUZZER_PIN 4
+
+MFRC522 mfrc522(SS_PIN, RST_PIN);
+
+const char* ssid = "name of wifi";
+const char* password = "Password";
+
+const char* ntpServer = "pool.ntp.org";
+const long gmtOffset_sec = 5 * 3600 + 1800;  
+const int daylightOffset_sec = 0;
+
+void setup() {
+  Serial.begin(9600);
+  SPI.begin();
+  mfrc522.PCD_Init();
+  pinMode(BUZZER_PIN, OUTPUT);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi connected!");
+
+  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  Serial.println("Time synchronized from NTP server.");
+
+  Serial.println("CLEARDATA");
+  Serial.println("LABEL,Name,Roll No,UID,Date,Time,Status");
+
+  Serial.println("System Ready — Scan your RFID card...");
+}
+
+void loop() {
+  if (!mfrc522.PICC_IsNewCardPresent()) return;
+  if (!mfrc522.PICC_ReadCardSerial()) return;
+
+  String content = "";
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    content += String(mfrc522.uid.uidByte[i] < 0x10 ? "0" : "");
+    content += String(mfrc522.uid.uidByte[i], HEX);
+  }
+  content.toUpperCase();
+
+  String name = "";
+  String roll = "";
+
+  if (content == "UID of RFID card") {
+    name = "Aditya Dhanwate";
+    roll = "12345678";
+  }
+  else {
+    name = "Unknown";
+    roll = "----";
+  }
+
+  for (int i = 0; i < 2; i++) {  
+    digitalWrite(BUZZER_PIN, HIGH);
+    delay(100);
+    digitalWrite(BUZZER_PIN, LOW);
+    delay(100);
+  }
+
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("Failed to obtain time");
+    return;
+  }
+
+  char dateStr[20];
+  strftime(dateStr, sizeof(dateStr), "%d-%m-%Y", &timeinfo);
+
+  char timeStr[20];
+  strftime(timeStr, sizeof(timeStr), "%I:%M:%S %p", &timeinfo);  
+
+  Serial.print("DATA,");
+  Serial.print(name); Serial.print(",");
+  Serial.print(roll); Serial.print(",");
+  Serial.print(content); Serial.print(",");
+  Serial.print(dateStr); Serial.print(",");
+  Serial.print(timeStr); Serial.print(",");
+  Serial.println("Present");
+
+  delay(300);
+}
